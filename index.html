@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parkinson's Disease Prediction</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #3b82f6; /* Tailwind blue-500 */
+            --color-secondary: #10b981; /* Tailwind emerald-500 */
+            --color-background: #f8fafc; /* Tailwind slate-50 */
+            --color-card: #ffffff;
+            --color-text: #1e293b; /* Tailwind slate-800 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text);
+        }
+        .input-group label {
+            font-weight: 500;
+            color: var(--color-text);
+            font-size: 0.875rem; /* sm */
+        }
+        .input-group input {
+            transition: all 0.2s;
+            border: 1px solid #e2e8f0; /* Tailwind slate-200 */
+        }
+        .input-group input:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        .prediction-box-initial {
+            border: 2px dashed #94a3b8; /* Tailwind slate-400 */
+            color: #64748b; /* Tailwind slate-500 */
+        }
+        .prediction-box-healthy {
+            background-color: #d1fae5; /* Tailwind green-100 */
+            color: #065f46; /* Tailwind green-700 */
+            border: 2px solid #10b981; /* Tailwind emerald-500 */
+        }
+        .prediction-box-parkinsons {
+            background-color: #fee2e2; /* Tailwind red-100 */
+            color: #b91c1c; /* Tailwind red-700 */
+            border: 2px solid #ef4444; /* Tailwind red-500 */
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div id="app" class="w-full max-w-4xl bg-white rounded-xl shadow-2xl p-6 md:p-10">
+
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <body class="text-3xl md:text-4xl font-extrabold text-gray-800 tracking-tight">Acoustic Feature Analyzer</body></h1>
+            <p class="text-gray-500 mt-2">Real-Time Prediction using Trained Model</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            <!-- Input Form (Left/Center) -->
+            <div class="lg:col-span-2">
+                <form id="predictionForm" class="space-y-4">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2 text-gray-700">Enter Acoustic Feature Values (22 Fields)</h2>
+
+                    <!-- List of 22 Features -->
+                    <div id="input-fields" class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+                        <!-- Fields will be dynamically injected here -->
+                    </div>
+
+                    <button type="submit" id="predictButton" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 shadow-md flex items-center justify-center disabled:opacity-50" disabled>
+                        <svg id="spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Predict Outcome
+                    </button>
+                    <p id="error-message" class="text-red-500 text-sm mt-2 hidden"></p>
+                </form>
+            </div>
+
+            <!-- Prediction Output (Right) -->
+            <div class="lg:col-span-1">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2 text-gray-700">Prediction Result</h2>
+
+                <div id="predictionResult" class="min-h-[150px] p-6 rounded-xl text-center flex flex-col justify-center items-center shadow-lg prediction-box-initial">
+                    <p id="main-result" class="text-2xl font-bold mb-2">Awaiting Input</p>
+                    <p id="explanation" class="text-sm font-medium italic">Enter all 22 values and click 'Predict'.</p>
+                </div>
+
+                <div class="mt-6 p-4 bg-blue-50 rounded-lg text-sm text-blue-800 border border-blue-200">
+                    <p class="font-semibold">Note on Prediction:</p>
+                    <p>The model requires 22 specific vocal acoustic features for diagnosis. A prediction of 1 suggests the presence of Parkinson's Disease, and 0 suggests a healthy state.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Global variables for Firebase access (required by the environment, though not strictly used for this client-side ML simulation)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        // REMOVED: const API_MODEL and const apiKey - We now call the local Flask server.
+        const FLASK_API_URL = 'http://127.0.0.1:5000/predict'; // <--- NEW API ENDPOINT
+
+        const featureNames = [
+            'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)', 'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)',
+            'MDVP:RAP', 'MDVP:PPQ', 'Jitter:DDP', 'MDVP:Shimmer', 'MDVP:Shimmer(dB)',
+            'Shimmer:APQ3', 'Shimmer:APQ5', 'MDVP:APQ', 'Shimmer:DDA', 'NHR', 'HNR',
+            'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE'
+        ];
+
+        // Example data from the original notebook's prediction cell for easy testing
+        const exampleData = [
+            119.992, 157.302, 74.997, 0.00784, 0.00007, 0.0037, 0.00554, 0.01109, 0.04374, 0.426,
+            0.02182, 0.0313, 0.02971, 0.06547, 0.02211, 21.033, 0.414783, 0.815285, -4.813031, 0.266482,
+            2.301442, 0.284654
+        ];
+
+        // --- DOM Elements ---
+        const inputFieldsContainer = document.getElementById('input-fields');
+        const form = document.getElementById('predictionForm');
+        const predictButton = document.getElementById('predictButton');
+        const spinner = document.getElementById('spinner');
+        const resultDiv = document.getElementById('predictionResult');
+        const mainResultText = document.getElementById('main-result');
+        const explanationText = document.getElementById('explanation');
+        const errorMessage = document.getElementById('error-message');
+
+
+        // --- Utility Functions ---
+
+        /**
+         * Dummy function, no longer used as we don't call the TTS API.
+         */
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        /**
+         * Generates the input fields dynamically and populates with example data.
+         */
+        function renderInputFields() {
+            featureNames.forEach((name, index) => {
+                const group = document.createElement('div');
+                group.className = 'input-group';
+                
+                const label = document.createElement('label');
+                label.htmlFor = `input-${index}`;
+                label.textContent = name;
+                
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.step = 'any';
+                input.id = `input-${index}`;
+                input.name = name;
+                input.value = exampleData[index]; // Prefill with example data
+                input.className = 'w-full p-2 border rounded-md focus:outline-none';
+                
+                group.appendChild(label);
+                group.appendChild(input);
+                inputFieldsContainer.appendChild(group);
+            });
+
+            // Enable button after rendering
+            predictButton.disabled = false;
+        }
+
+        /**
+         * Handles the API call with exponential backoff for retries.
+         * NOTE: We keep this structure but simplify it for a standard HTTP call
+         * to the local Flask server, as backoff is usually for external, rate-limited APIs.
+         */
+        async function fetchWithRetry(url, options, maxRetries = 1) {
+            try {
+                const response = await fetch(url, options);
+                
+                if (!response.ok) {
+                    // Check for common CORS or server down issues
+                    throw new Error(`Server call failed with status: ${response.status} or network error. Is the Flask server running on ${FLASK_API_URL}?`);
+                }
+
+                // If successful, return the JSON response directly
+                return response.json(); 
+
+            } catch (error) {
+                // We simplify retries for local server debugging
+                console.error("Prediction API Error:", error);
+                throw new Error("Could not connect to the Prediction Server. Ensure 'python app.py' is running and accessible at " + FLASK_API_URL);
+            }
+        }
+
+
+        /**
+         * Makes the prediction API call to the local Flask server.
+         * @param {Array<number>} inputValues - The 22 feature values.
+         */
+        async function makePrediction(inputValues) {
+            // Data structure must match what the Flask API expects
+            const payload = {
+                features: inputValues
+            };
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            // fetchWithRetry now returns the parsed JSON response
+            const result = await fetchWithRetry(FLASK_API_URL, options);
+            
+            // Check for explicit error messages from the Flask server
+            if (result.error) {
+                 throw new Error(result.error);
+            }
+
+            // Expected response format from Flask: { prediction: 0 or 1, message: "..." }
+            return {
+                prediction: result.prediction,
+                explanation: result.message // Use the message from the server as the explanation
+            };
+        }
+
+        /**
+         * Form Submission Handler
+         */
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            errorMessage.classList.add('hidden');
+            let inputValues = [];
+            let isValid = true;
+
+            // 1. Collect and Validate Data
+            featureNames.forEach((_, index) => {
+                const inputElement = document.getElementById(`input-${index}`);
+                const value = parseFloat(inputElement.value);
+
+                if (isNaN(value)) {
+                    isValid = false;
+                    inputElement.classList.add('ring-2', 'ring-red-500');
+                } else {
+                    inputElement.classList.remove('ring-2', 'ring-red-500');
+                    inputValues.push(value);
+                }
+            });
+
+            if (!isValid) {
+                errorMessage.textContent = 'Please ensure all 22 fields contain valid numerical data.';
+                errorMessage.classList.remove('hidden');
+                return;
+            }
+
+            // 2. Prepare UI for loading state
+            predictButton.disabled = true;
+            spinner.classList.remove('hidden');
+            mainResultText.textContent = 'Contacting Server...';
+            explanationText.textContent = 'Sending features to Python model for real-time analysis.';
+            resultDiv.className = 'min-h-[150px] p-6 rounded-xl text-center flex flex-col justify-center items-center shadow-lg prediction-box-initial';
+
+
+            try {
+                // 3. Make Prediction call to the Flask Server
+                const response = await makePrediction(inputValues);
+                
+                const prediction = response.prediction;
+                const explanation = response.explanation;
+
+
+                // 4. Update UI with result
+                if (prediction === 1) {
+                    mainResultText.textContent = 'Prediction: Parkinson\'s Disease';
+                    resultDiv.className = 'min-h-[150px] p-6 rounded-xl text-center flex flex-col justify-center items-center shadow-lg prediction-box-parkinsons';
+                } else {
+                    mainResultText.textContent = 'Prediction: Healthy';
+                    resultDiv.className = 'min-h-[150px] p-6 rounded-xl text-center flex flex-col justify-center items-center shadow-lg prediction-box-healthy';
+                }
+                explanationText.textContent = explanation;
+
+
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.remove('hidden');
+                mainResultText.textContent = 'Connection Error';
+                explanationText.textContent = 'Check your Python server console.';
+            } finally {
+                // 5. Reset UI state
+                predictButton.disabled = false;
+                spinner.classList.add('hidden');
+            }
+        });
+
+        // Initialize the app when the DOM is ready
+        document.addEventListener('DOMContentLoaded', renderInputFields);
+
+    </script>
+</body>
+</html>
